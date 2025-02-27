@@ -1,101 +1,241 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import React, { useEffect, useState } from 'react';
+import AudioRecorder from '@/components/AudioRecorder';
+import TranscriptionDisplay from '@/components/TranscriptionDisplay';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { loader } from '@/lib/loader';
+import { saveAndPlayAudio } from '@/lib/indexedDb';
+
+const Page = () => {
+  const indexName = 'exampleindex';
+  const [urls, setUrls] = useState<string[]>([]);
+  const [status, setStatus] = useState<string>('Idle');
+  const [isScraping, setScraping] = useState(false);
+  const [isUpserting, setUpserting] = useState(false);
+  const [isQuerying, setQuerying] = useState(false);
+  const [query, setQuery] = useState<string>('');
+  const [answer, setAnswer] = useState<string>('');
+
+  // controller
+  useEffect(() => {
+    // change status
+    setStatus('Ready to ask questions');
+  }, []);
+
+  const handleScrape = async () => {
+    console.log('Scraping and Upserting');
+
+    setStatus('Scraping content');
+    setScraping(true);
+    try {
+      const response = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls }),
+      });
+      if (!response.ok) {
+        throw new Error('Scraping failed');
+      }
+      const data = await response.json();
+      console.log('Scrape response:', data);
+
+      const directory = data.directory;
+      const files = data.files;
+      const skippedFiles = data.skippedFiles;
+      console.log('Scraped directory:', directory);
+      console.log('Scraped files:', files);
+      console.log('Skipped files:', skippedFiles);
+
+      return { directory, files, skippedFiles };
+    } catch (error: any) {
+      setStatus(`Error: ${error.message}`);
+    } finally {
+      console.log('Scraping completed');
+
+      setScraping(false);
+    }
+  };
+
+  const handleUpsert = async (filePath: string, indexName: string ) => {
+    console.log('Upserting content');
+
+    setStatus('Upserting content');
+    setUpserting(true);
+    try {
+      const response = await fetch('/api/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath, indexName }),
+      });
+      if (!response.ok) {
+        throw new Error('Upserting failed');
+      }
+      const data = await response.json();
+      console.log('Embed response:', data);
+      console.log('Stats: ', data.stats);
+      setStatus('Ready to ask questions');
+    } catch (error: any) {
+      setStatus(`Error: ${error.message}`);
+    } finally {
+      console.log('Upserting completed');
+
+      setUpserting(false);
+    }
+  };
+
+  // control over process and upsert
+  const handleProcess = async () => {
+    console.log('Processing... ');
+
+    // Scrape
+    const { directory, files } : any = await handleScrape();
+    if (!directory || !files) return;
+
+    // Upsert
+    const filePaths = files.map((file: string) => `${directory}/${file}`);
+    for (const filePath of filePaths) {
+      await handleUpsert(filePath, indexName);
+    }
+  };
+
+  // Convert text to speech
+  const textToSpeech = async (text: string) => {
+    console.log('Converting text to speech...');
+    try {
+      const response = await fetch('/api/text2speech', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        throw new Error('API request failed');
+      }
+
+      const blob = await response.blob();
+
+      await saveAndPlayAudio(blob);
+    } catch (error) {
+      console.error('Error:', error);
+      alert('An error occurred while fetching the audio.');
+    } finally {
+      console.log('Text to speech completed');
+    }
+  };
+
+  const handleSendQuery = async () => {
+    console.log('Sending query');
+
+    if (!query) return;
+    setStatus('Processing query');
+    console.log('Processing Query:', query);
+    setQuerying(true);
+    try {
+      const response = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, indexName }),
+      });
+      if (!response.ok) {
+        throw new Error('Query failed');
+      }
+      const data = await response.json();
+      console.log('Query response:', data);
+      setAnswer(data.answer); // Markdown format
+      setStatus('Answer generated');
+      return data.answer;
+    } catch (error: any) {
+      setStatus(`Error: ${error.message}`);
+    } finally {
+      console.log('Query completed');
+
+      setQuerying(false);
+    }
+  };
+
+  const cleanUpAgentAnswer = (answer: string) => {
+    // Remove markdown formatting
+    return answer.replace(/[#*`]/g, '');
+  };
+
+  const handleConvo = async () => {
+    console.log('Starting conversation');
+
+    // Send a query
+    const r = await handleSendQuery();
+
+    // Convert text to speech
+    if (r) {
+      const cleanAnswer = cleanUpAgentAnswer(r);
+      await textToSpeech(cleanAnswer);
+    }
+  };
+
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        <section className="w-full max-w-2xl">
+          <Label htmlFor="urls">Enter URLs (one per line):</Label>
+          <Textarea
+            id="urls"
+            value={urls.join('\n')}
+            onChange={e => setUrls(e.target.value.split('\n').filter(url => url.trim()))}
+            disabled={isScraping || isUpserting}
+            className="mt-2"
+          />
+          <Button
+            disabled={isScraping || isUpserting || urls.length === 0}
+            onClick={handleProcess}
+            className="mt-4"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+            {isScraping ? loader() : 'Proceed'}
+          </Button>
+        </section>
+        <section className="w-full max-w-2xl">
+          <p className="text-lg font-semibold">{status}</p>
+        </section>
+        {status === 'Ready to ask questions' && (
+          <>
+            {/* // Query by voice */}
+            <section className="w-full max-w-2xl">
+              <AudioRecorder onTranscript={setQuery} />
+              <TranscriptionDisplay transcript={query} />
+              <Button
+                disabled={isQuerying || !query}
+                onClick={handleConvo}
+                className="mt-4"
+              >
+                {isQuerying ? loader() : 'Send Query'}
+              </Button>
+            </section>
+            {/* // Query manual input */}
+            <section className="w-full max-w-2xl">
+              <Label htmlFor="query">Enter your query:</Label>
+              <Textarea
+                id="query"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                disabled={isQuerying}
+                className="mt-2"
+              />
+              <Button
+                disabled={isQuerying || !query}
+                onClick={handleConvo}
+                className="mt-4"
+              >
+                {isQuerying ? loader() : 'Send Query'}
+              </Button>
+            </section>
+          </>
+        )}
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
-}
+};
+
+export default Page;
