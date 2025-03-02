@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     // Ensure the resources directory exists
     if (!fs.existsSync(RESOURCES_DIR)) {
       fs.mkdirSync(RESOURCES_DIR);
-    }
+    } // in the future/ or further steps we consider to upload the file AWS S3, Theo's UploadThing. 
 
     // Parse and validate request body
     const { urls } = await request.json();
